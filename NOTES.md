@@ -2,6 +2,9 @@
 
 ## NOTES:
 
+### Q: Given a single client, is it possible to reuse the same connection for its subsequent requests?
+See: https://en.wikipedia.org/wiki/HTTP_persistent_connection
+
 - Given a single client, is it possible to reuse the same connection for its subsequent requests?
 - Can I use the same thread for different connections?
 - Can I use a JAR file - that has an entrypoint - as a library?
