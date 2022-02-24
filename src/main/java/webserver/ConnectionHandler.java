@@ -28,18 +28,22 @@ public class ConnectionHandler implements Runnable {
     BufferedReader in = null;
     BufferedWriter out = null;
 
+    // TODO: Refactor urgently
+
     try {
       in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
       out = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
 
       var requestLines = new ArrayList<String>();
 
+      // Read whole request
       while (true) {
         var line = in.readLine();
         if (line == null || line.isEmpty())
           break;
         requestLines.add(line);
       }
+      // ------------------
 
       if (requestLines.isEmpty()) {
         System.out.println("The request was empty.");
@@ -48,22 +52,24 @@ public class ConnectionHandler implements Runnable {
 
       System.out.println(requestLines.get(0));
 
+      // Parse the first request line to get the method and uri
       var split = requestLines.get(0).split(" ");
       var method = split[0];
-
       var uri = split[1].substring(1); // get rid of the /
+      
       var filename = uri;
       if (uri.isEmpty())
-        filename = "index.html";
+        filename = "index.html"; // this has to be done when the uri is a directory too 
 
       var filePath = Paths.get(webrootPath, filename);
       
+      // First validate the uri and then the method
       if (!filePath.toFile().exists()) {
         writeErrorResponse(out, "404 Not Found");
       } else if (method.equals("GET") || method.equals("HEAD")) {
         try (var fileReader = Files.newBufferedReader(filePath)) {
           out.write("HTTP/1.1 200 OK\r\n");
-          out.write("Content-Type: " + Files.probeContentType(filePath) + "\r\n");
+          out.write("Content-Type: " + Files.probeContentType(filePath) + "\r\n"); // it may be improved
           out.write("Content-Length: " + filePath.toFile().length() + "\r\n");
           out.write("\r\n");
 
@@ -73,7 +79,7 @@ public class ConnectionHandler implements Runnable {
               if (line == null)
                 break;
   
-              // I should read the file contents as is instead.
+              // It should read the file contents as is instead.
               out.write(line + System.lineSeparator());
             }
           }
