@@ -1,14 +1,15 @@
 package webserver;
 
+import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
-import java.io.IOException;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.ArrayList;
 
 public class ConnectionHandler implements Runnable {
   private Socket socket;
@@ -25,93 +26,65 @@ public class ConnectionHandler implements Runnable {
 
   @Override
   public void run() {
-    BufferedReader in = null;
-    BufferedWriter out = null;
+    try (
+      var in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+      var out = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
+    ) {
+      var line = in.readLine();
 
-    // TODO: Refactor urgently
-
-    try {
-      in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-      out = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
-
-      var requestLines = new ArrayList<String>();
-
-      // Read whole request
-      while (true) {
-        var line = in.readLine();
-        if (line == null || line.isEmpty())
-          break;
-        requestLines.add(line);
-      }
-      // ------------------
-
-      if (requestLines.isEmpty()) {
-        System.out.println("The request was empty.");
+      if (line == null) {
+        out.flush();
         return;
       }
 
-      System.out.println(requestLines.get(0));
-
-      // Parse the first request line to get the method and uri
-      var split = requestLines.get(0).split(" ");
-      var method = split[0];
-      var uri = split[1].substring(1); // get rid of the /
+      while (line.isBlank())
+        line = in.readLine();
       
-      var filename = uri;
-      if (uri.isEmpty())
-        filename = "index.html"; // this has to be done when the uri is a directory too 
+      while (!in.readLine().isBlank());
 
-      var filePath = Paths.get(webrootPath, filename);
-      
-      // First validate the uri and then the method
-      if (!filePath.toFile().exists()) {
-        writeErrorResponse(out, "404 Not Found");
-      } else if (method.equals("GET") || method.equals("HEAD")) {
-        try (var fileReader = Files.newBufferedReader(filePath)) {
-          out.write("HTTP/1.1 200 OK\r\n");
-          out.write("Content-Type: " + Files.probeContentType(filePath) + "\r\n"); // it may be improved
-          out.write("Content-Length: " + filePath.toFile().length() + "\r\n");
-          out.write("\r\n");
+      var method = line.substring(0, line.indexOf(' '));
+      var uri = line
+        .substring(line.indexOf('/'), line.lastIndexOf(' '))
+        .substring(1)
+        .replace("/", File.separator)
+        .trim();
 
-          if (method.equals("GET")) {
-            while (true) {
-              var line = fileReader.readLine();
-              if (line == null)
-                break;
-  
-              // It should read the file contents as is instead.
-              out.write(line + System.lineSeparator());
-            }
-          }
-        }
-      } else {
-        writeErrorResponse(out, "405 Not Allowed");
+      var fileName = uri.isEmpty() ? "index.html" : uri;
+      var file = Paths.get(webrootPath, fileName).toFile();
+
+      if (file.isDirectory()) {
+        fileName = "index.html";
+        file = Paths.get(file.getAbsolutePath(), fileName).toFile();
       }
 
-      out.flush();
+      if (!file.exists()) {
+        var reason = "404 Not Found";
+        out.write("HTTP/1.1 " + reason + "\r\n");
+        out.write("Content-Type: text/plain\r\n");
+        out.write("Content-Length: " + reason.length() + "\r\n");
+        out.write("\r\n");
+        out.write(reason);
+        out.flush();
+        
+        return;
+      }
+
+      try (var reader = new BufferedInputStream(new FileInputStream(file.getPath()))) {
+        out.write("HTTP/1.1 200 OK\r\n");
+        out.write("Content-Type: " + Files.probeContentType(file.toPath()) + "\r\n");
+        out.write("Content-Length: " + file.length() + "\r\n");
+        out.write("\r\n");
+        
+        int b;
+        if (method.equals("GET"))
+          while ((b = reader.read()) != -1)
+            out.write(b);
+        
+        out.flush();
+      }
+      socket.close();
     } catch (Exception e) {
       e.printStackTrace();
-    } finally {
-      try {
-        in.close();
-        out.close();
-        socket.close();
-      } catch (Exception e) {
-        e.printStackTrace();
-      }
     }
-  }
-
-  private static void writeErrorResponse(BufferedWriter writer, String error) throws IOException {
-    var errorPage = errorPage(error);
-    writer.write("HTTP/1.1 " + error + "\r\n");
-    writer.write("Content-Type: text/html\r\n");
-    writer.write("Content-Length: " + errorPage.length() + "\r\n");
-    writer.write("\r\n");
-    writer.write(errorPage);
-  }
-
-  private static String errorPage(String title) {
-    return String.format("<html><head><title>%s</title></head><body><h1>%<s</h1></body></html>", title);
   }
 }
